@@ -521,16 +521,12 @@ def createForecast(df, numOfDay):
 async def predict(input_data: InputData):
     
     df = pd.DataFrame(input_data.query_result)
-
     
     df = clean_and_standardize_data(df)
     df = process_aggregated_data(df)
-
     
     df_forecast = createForecast(df, input_data.num_days)
     
-    
-    df_forecast['Profit_Per_Day'] = df_forecast['sales_quantity'] * df_forecast['price_per_item']
     result = df_forecast[['Date', 'Profit_Per_Day']].to_dict(orient='records')
     
     return {"forecast": result}
