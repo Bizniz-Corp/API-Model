@@ -302,8 +302,22 @@ def process_aggregated_data(df):
 
     return aggregated_data
 
+
+
+
+
+
+# SPLITTING DATA
+
 def SplittingData(df, split_index):
-    
+    train, test = df.iloc[:split_index], df.iloc[split_index:]
+    X_train = train.drop(columns=['Profit_Per_Day'])
+    y_train = train['Profit_Per_Day']
+    X_test = test.drop(columns=['Profit_Per_Day'])
+    y_test = test['Profit_Per_Day']
+    if not (type(X_train['Date']) == 'int64'):
+        X_train['Date'] = X_train['Date'].astype('int64') // 10**9
+        X_test['Date'] = X_test['Date'].astype('int64') // 10**9
     return X_train, y_train, X_test, y_test
 
 
