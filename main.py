@@ -302,6 +302,8 @@ def process_aggregated_data(df):
 
     return aggregated_data
 
+main_column = ['Total_Transactions', 'Total_Products', 'Highest_Price', 'Median_Price', 'Lowest_Price', 'Total_Quantity', 'Highest_Quantity_Product', 'Lowest_Quantity_Product', 'Median_Quantity']
+secondary_column = ['Second_Highest_Price', 'Second_Lowest_Price', 'Mean_Quantity_Per_Transaction', 'Second_Highest_Quantity', 'Second_Lowest_Quantity', 'Total_Quantity_Highest_Price', 'Total_Quantity_Lowest_Price', 'Total_Quantity_Second_Highest_Price', 'Total_Quantity_Second_Lowest_Price', 'Total_Quantity_Median_Price', 'Price_Highest_Quantity', 'Price_Lowest_Quantity', 'Price_Second_Highest_Quantity', 'Price_Second_Lowest_Quantity', 'Price_Median_Quantity']
 
 
 
@@ -321,6 +323,12 @@ def SplittingData(df, split_index):
     return X_train, y_train, X_test, y_test
 
 
+
+
+
+
+# MODEL
+
 mainModel = XGBRegressor(
     n_estimators=10000,
     learning_rate=0.01,
@@ -329,17 +337,184 @@ mainModel = XGBRegressor(
     colsample_bytree=0.9,
 )
 
-def firstTrain(df, model, split_index, with_eval_set=True):
+def firstTrain(df, model, split_index, with_eval_set = True):
+    X_train, y_train, X_test, y_test = SplittingData(df, split_index)
     
-    return model
+    eval_set = [(X_train, y_train), (X_test, y_test)]
+    if (with_eval_set):    
+        final_model = model.fit(
+            X_train,
+            y_train,
+            eval_set=eval_set,
+            verbose=False
+        )
+    else:
+        final_model = model.fit(
+            X_train,
+            y_train,
+            verbose=False
+        )
+
+    return final_model
 
 def predictSingleColumnTierOne(df):
+    col = df.columns
     
-    return model
+    for i in range(len(col)):
+        if not ('Date' in col[i]):
+            target_col = col[i]
+    
+    df['Year'] = pd.to_datetime(df['Date']).dt.year
+    df['Month'] = pd.to_datetime(df['Date']).dt.month
+    df['Day'] = pd.to_datetime(df['Date']).dt.day
+    df['Is_Weekend'] = pd.to_datetime(df['Date']).dt.weekday >= 5
+    df['Date'] = df['Date'].astype('int64') // 10**9
+    
+    split_index = int(0.8 * len(df))   
+    
+    train, test = df.iloc[:split_index], df.iloc[split_index:]
+    
+    X_train = train.drop(columns=[target_col])
+    y_train = train[target_col]
+    X_test = test.drop(columns=[target_col])
+    y_test = test[target_col]
+    
+    
+    modelSingleColumn = XGBRegressor(
+        n_estimators=1000,
+        learning_rate=0.005,
+        max_depth=12,
+        subsample=0.8,
+        colsample_bytree=0.9,
+    )
+
+    eval_set = [(X_train, y_train), (X_test, y_test)]
+    modelSingleColumn.fit(
+        X_train,
+        y_train,
+        eval_set=eval_set,
+        verbose=False
+    )
+    
+    return modelSingleColumn
+
+def predictSingleColumnTierTwo(df, target):
+    
+    df['Year'] = pd.to_datetime(df['Date']).dt.year
+    df['Month'] = pd.to_datetime(df['Date']).dt.month
+    df['Day'] = pd.to_datetime(df['Date']).dt.day
+    df['Is_Weekend'] = pd.to_datetime(df['Date']).dt.weekday >= 5
+    df['Date'] = df['Date'].astype('int64') // 10**9
+    
+    split_index = int(0.8 * len(df))   
+    
+    train, test = df.iloc[:split_index], df.iloc[split_index:]
+    
+    X_train = train.drop(columns=[target])
+    y_train = train[target]
+    X_test = test.drop(columns=[target])
+    y_test = test[target]
+    
+    
+    modelSingleColumn = XGBRegressor(
+        n_estimators=1000,
+        learning_rate=0.005,
+        max_depth=12,
+        subsample=0.8,
+        colsample_bytree=0.9,
+    )
+
+    eval_set = [(X_train, y_train), (X_test, y_test)]
+    modelSingleColumn.fit(
+        X_train,
+        y_train,
+        eval_set=eval_set,
+        verbose=False
+    )
+    
+    return modelSingleColumn
 
 def createForecast(df, numOfDay):
+    if not np.issubdtype(df['Date'].dtype, np.datetime64):
+        df['Date'] = pd.to_datetime(df['Date'])
     
-    return df
+    pure_df = df.copy()
+        
+    last_date = df['Date'].max()
+    
+    new_dates = [last_date + pd.Timedelta(days=i) for i in range(1, numOfDay + 1)]
+    
+    new_rows = pd.DataFrame({'Date': new_dates})
+    
+    # Ekstraksi atribut tanggal
+    new_rows['Year'] = new_rows['Date'].dt.year
+    new_rows['Month'] = new_rows['Date'].dt.month
+    new_rows['Day'] = new_rows['Date'].dt.day
+    new_rows['Is_Weekend'] = new_rows['Date'].dt.weekday >= 5
+    
+    # Tambahkan kolom lainnya dengan nilai NaN
+    for col in df.columns:
+        if col not in ['Date', 'Year', 'Month', 'Day', 'Is_Weekend']:
+            new_rows[col] = np.nan
+    
+    df_extended = pd.concat([df, new_rows], ignore_index=True)
+    
+    for col in main_column:
+        df_pred = df[['Date', col]].copy()
+        model = predictSingleColumnTierOne(df_pred)
+        df_temp = df_extended.tail(numOfDay).copy()
+        df_final = df_temp[['Date', 'Year', 'Month', 'Day', 'Is_Weekend', col]].copy()
+        
+        X = df_final.drop(columns=[col]).copy()
+        X['Date'] = X['Date'].astype('int64') // 10**9
+        y = df_final[col]
+        
+        y_pred = model.predict(X)
+        df_extended[col].iloc[-numOfDay:] = y_pred
+        
+    
+    for col in secondary_column:
+        all_col = [col for col in main_column]
+        all_col.append('Date')
+        all_col.append(col)
+        
+        df_pred = df[all_col].copy()
+        model = predictSingleColumnTierTwo(df_pred, col)
+        df_temp = df_extended.tail(numOfDay).copy()
+        all_col.append('Year')
+        all_col.append('Month')
+        all_col.append('Day')
+        all_col.append('Is_Weekend')
+        df_final = df_temp[all_col].copy()
+        
+        X = df_final.drop(columns=[col]).copy()
+        X['Date'] = X['Date'].astype('int64') // 10**9
+        y = df_final[col]
+        
+        y_pred = model.predict(X)
+        df_extended[col].iloc[-numOfDay:] = y_pred
+        
+    # Gabungkan DataFrame asli dengan baris baru
+    
+    modelProfit = firstTrain(pure_df, mainModel, int(len(pure_df) - numOfDay), False)
+    
+    split_index = len(pure_df) - numOfDay
+
+    train, test = pure_df.iloc[:split_index], pure_df.iloc[split_index:]
+    
+    X1 = test.drop(columns=['Profit_Per_Day'])
+    
+    if not (type(X1['Date']) == 'int64'):
+        X1['Date'] = X1['Date'].astype('int64') // 10**9
+        
+    y1 = test['Profit_Per_Day']
+    
+    y1_pred = modelProfit.predict(X1)
+    
+    df_extended['Profit_Per_Day'].iloc[-numOfDay:] = y1_pred
+    
+    return df_extended
+
 
 
 @app.post("/forecast")
