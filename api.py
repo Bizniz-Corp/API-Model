@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import pandas as pd
 import numpy as np
-import xgboost as XGBRegressor
+from xgboost import XGBRegressor
 import re
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_absolute_error
@@ -435,8 +435,10 @@ def predictSingleColumnTierTwo(df, target):
     return modelSingleColumn
 
 def createForecast(df, numOfDay):
+    df['Date'] = df['Date'].dt.tz_localize(None)
+
     if not np.issubdtype(df['Date'].dtype, np.datetime64):
-        df['Date'] = pd.to_datetime(df['Date'])
+        raise ValueError("The 'Date' column is not of datetime type")
     
     pure_df = df.copy()
         
@@ -520,7 +522,7 @@ def createForecast(df, numOfDay):
 @app.post("/forecast")
 async def predict(input_data: InputData):
     
-    df = pd.DataFrame(input_data.query_result)
+    df = pd.DataFrame(input_data.data)
     
     df = clean_and_standardize_data(df)
     df = process_aggregated_data(df)
@@ -532,4 +534,4 @@ async def predict(input_data: InputData):
     return {"forecast": result}
 
 # Jalankan FastAPI dengan Uvicorn:
-# uvicorn script_name:app --reload
+# uvicorn api:app --reload
